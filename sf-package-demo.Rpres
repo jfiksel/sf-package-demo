@@ -1,0 +1,285 @@
+Introduction to the SF Package 
+========================================================
+author: Jacob Fiksel
+date: March 12, 2019
+width: 1440
+height: 1000
+
+
+========================================================
+
+![](figs/sfcartoon.jpg)
+
+
+Goal of the presentation: To make this!
+========================================================
+
+<div align="center">
+<img src="figs/opioid_deaths_over_time.gif" width=1200 height=900>
+</div>
+
+Downloading and reading shape files
+========================================================
+
+- To plot geographic boundaries, we use shape (.shp) files 
+- Download data from the [US Census website](https://www2.census.gov/geo/tiger/GENZ2017/shp/)
+- Choose cb_2017_us_state_20m.zip
+
+```{r}
+library(sf)
+usa <- read_sf("data/cb_2017_us_state_20m.shp")  
+```
+
+The sf class
+========================================================
+
+```{r}
+usa
+```
+
+The sf class geometry
+========================================================
+
+```{r, message = TRUE}
+st_geometry(usa)
+```
+
+Simple feature geometry (sfg)
+========================================================
+<div align="center">
+<img src="figs/sfg.png" width=1200 height=900>
+</div>
+
+sf objects can be operated on like tibbles
+========================================================
+```{r, message = FALSE, warning = FALSE}
+library(tidyverse)
+usa_48 <-
+    usa %>%
+    filter(!(STUSPS %in% c('AK', 'HI', 'PR')))
+```
+
+The sf package has built in spatial-specific functions
+========================================================
+```{r}
+state_areas <-
+    usa %>%
+    mutate(area = st_area(.)) %>%
+    st_set_geometry(NULL) %>%
+    select(NAME, area) %>%
+    arrange(desc(area)) 
+state_areas
+```
+
+sf objects can be plotted with ggplot2
+========================================================
+```{r, message = FALSE, warning = FALSE, fig.width=12, fig.height=12, fig.show='hold', fig.align='center'}
+usa_48 %>%
+    ggplot() +
+    geom_sf()
+```
+
+Merging sf objects with tibbles 
+========================================================
+- We will use data from the `socviz` package which has opioid death rates
+by states over time
+
+```{r}
+library(socviz)
+data(opiates)
+head(opiates[,c("adjusted", "abbr")])
+```
+
+Merging sf objects with tibbles 
+========================================================
+- The `opiates` object has the state names in the `abbr` column,
+while our `usa_48` object has the state names in the `STUSPS` column
+```{r}
+opiates <-
+    opiates %>%
+    select(-state) %>%
+    rename(STUSPS = abbr) %>%
+    complete(STUSPS, year)
+```
+
+Merging sf objects with tibbles 
+========================================================
+- We can now merge our `sf` object with this `tibble`, just as if itself
+were a `tibble`
+```{r}
+usa_48 <- left_join(usa_48, opiates, by = "STUSPS")
+head(usa_48)
+```
+
+We can now plot the opioid death rates over time
+========================================================
+
+```{r, eval = FALSE}
+usa_48 %>%
+    filter(year > 1999) %>%
+    ggplot(aes(fill = adjusted)) +
+    geom_sf() +
+    facet_wrap(~year, ncol = 4) +
+    scale_fill_viridis_c(option = "plasma") +
+    theme(legend.position = "bottom",
+          strip.background = element_blank()) +
+    labs(fill = "Death rate per 100,000 population ",
+         title = "Opiate Related Deaths by State, 2000-2014")  
+```
+
+We can now plot the opioid death rates over time
+========================================================
+
+```{r, echo = FALSE, message = FALSE, warning = FALSE, fig.width = 14, fig.height = 14, fig.show='hold', fig.align='center'}
+usa_48 %>%
+    filter(year > 1999) %>%
+    ggplot(aes(fill = adjusted)) +
+    geom_sf() +
+    facet_wrap(~year, ncol = 4) +
+    scale_fill_viridis_c(option = "plasma") +
+    theme(legend.position = "bottom",
+          strip.background = element_blank()) +
+    labs(fill = "Death rate per 100,000 population ",
+         title = "Opiate Related Deaths by State, 2000-2014")  
+```
+
+Adding animination with the gganiminate package
+========================================================
+```{r, eval = FALSE}
+library(gganimate)
+usa_48 %>%
+    filter(year > 1999) %>%
+    ggplot(aes(fill = adjusted)) +
+    geom_sf()
+    scale_fill_viridis_c(option = "plasma") +
+    labs(fill = "Death rate per 100,000 population ",
+         title = "Opiate Related Deaths by State, {frame_time}") +
+    transition_time(as.integer(year)) +
+    ease_aes('bounce-in-out')
+```
+
+Adding animination with the gganiminate package
+========================================================
+<div align="center">
+<img src="figs/opioid_deaths_over_time.gif" width=1200 height=900>
+</div>
+
+Another example
+========================================================
+<div align="center">
+<img src="bmore_shootings.jpg" width=1200 height=900>
+</div>
+
+Downloading crimes data
+========================================================
+- Data available from [Open Baltimore](https://data.baltimorecity.gov/Public-Safety/BPD-Part-1-Victim-Based-Crime-Data/wsfq-mvij)
+- Has data on crimes in Baltimore from Jan. 2015-Feb. 2019
+- Constantly updated
+```{r}
+library(sf)
+library(tidyverse)
+library(lubridate)
+crimes <- read.csv("data/BPD_Part_1_Victim_Based_Crime_Data.csv")
+shootings <-
+    crimes %>%
+    mutate(CrimeDate = as.character(CrimeDate),
+           CrimeDate = mdy(CrimeDate),
+           month = month(CrimeDate),
+           year = year(CrimeDate)) %>%
+    filter(!is.na(Latitude), !is.na(Longitude), Description == "SHOOTING") %>%
+    select(Latitude, Longitude, month, year)
+```
+
+Can use the sf package to transform spatial data frames to sf objects
+========================================================
+```{r, message = TRUE}
+shootings_sf <- st_as_sf(shootings, coords = c("Longitude", "Latitude"))
+st_geometry(shootings_sf)
+```
+
+Downloading Baltimore neighborhood shape file
+========================================================
+- Data also available from Baltimore [Open Data](http://gis-baltimore.opendata.arcgis.com/datasets/1ca93e68f11541d4b59a63243725c4b7_0)
+
+```{r, message = TRUE}
+neighborhoods <-
+    read_sf("data/baltimore_neighborhoods/Neighborhoods.shp") %>%
+    select(Name)
+st_geometry(neighborhoods)
+```
+
+Have to fix the projection to latitude/longitutde
+========================================================
+
+```{r,message = TRUE}
+neighborhoods <- st_transform(neighborhoods, "+proj=longlat")
+st_geometry(neighborhoods)
+```
+
+Useful operation from the sf package
+========================================================
+- Available using the sf package cheat sheet from [RStudio resources](https://www.rstudio.com/resources/cheatsheets/)
+![](figs/st_intersection.png)
+
+st_intersection in practice
+========================================================
+```{r}
+st_crs(shootings_sf) <- st_crs(neighborhoods)
+shootings_in_bmore_neighborhoods <-
+    shootings_sf %>%
+    st_crop(st_bbox(neighborhoods)) %>%
+    st_intersection(neighborhoods)
+shootings_in_bmore_neighborhoods
+```
+
+
+Plotting the exact locations of shootings
+========================================================
+```{r, eval = F}
+ggplot() +
+    geom_sf(data = neighborhoods) +
+    geom_sf(data = shootings_in_bmore_neighborhoods, alpha = .4)
+```
+
+Plotting the exact locations of shootings
+========================================================
+<div align="center">
+<img src="figs/bmore_shooting_point.jpg" width=1200 height=900>
+</div>
+
+Aggregating the number of shootings by neighborhood using dplyr
+========================================================
+```{r}
+st_geometry(shootings_in_bmore_neighborhoods) <- NULL
+shootings_by_neighborhood <-
+    shootings_in_bmore_neighborhoods %>%
+    group_by(Name) %>%
+    summarize(nshootings = n()) 
+```
+
+Aggregating the number of shootings by neighborhood using dplyr
+========================================================
+```{r}
+neighborhoods <-
+    left_join(neighborhoods, shootings_by_neighborhood, by = "Name")
+neighborhoods
+```
+
+And the final plot!
+========================================================
+```{r, eval = F}
+bmore_shootings <-
+    neighborhoods %>%
+    mutate(nshootings = ifelse(is.na(nshootings), 0, nshootings)) %>%
+    ggplot(aes(fill = nshootings)) +
+    geom_sf()  +
+    scale_fill_viridis_c(option = "plasma") +
+    guides(fill=guide_legend(title=NULL)) +
+    ggtitle("Number of shootings by neighborhood \nJan. 2015 - Feb. 2019")
+```
+
+And the final plot!
+========================================================
+<div align="center">
+<img src="figs/bmore_shootings.jpg" width=1200 height=900>
+</div>
